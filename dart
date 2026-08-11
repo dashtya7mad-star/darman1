@@ -4,8 +4,8 @@ import 'package:televerse/televerse.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
 // ==================== ١. توکنەکان ====================
-const String botToken = 'لێرە_توکنی_بۆت_دانە';
-const String geminiApiKey = 'لێرە_ئەیپای_جیمینی_دانە';
+const String botToken = '8835498489:AAEX0l791FYIIRR2ZeboHIlEbVZ_ULo3SKU';
+const String geminiApiKey = 'AQ.Ab8RN6LYECH-Rf7lZ8FRpo2BzX4x6iTwuDpSMPFqS-HBwdWhrA';
 
 // ==================== ٢. بەڕێوەبردنی دۆخ ====================
 enum UserState { idle, waitingForWeight }
