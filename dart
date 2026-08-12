@@ -4,7 +4,7 @@ import 'package:televerse/televerse.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
 // ✅ لە Environment Variables وەردەگرێت (ئەمنترە)
-final String botToken = Platform.environment['8835498489:AAEX0l791FYIIRR2ZeboHIlEbVZ_ULo3SKU'] ?? '';
+final String botToken = Platform.environment['8981441543:AAFUz_UWADttNZKxlQm46FOToBvLPiXrue8'] ?? '';
 final String geminiApiKey = Platform.environment['AQ.Ab8RN6LYECH-Rf7lZ8FRpo2BzX4x6iTwuDpSMPFqS-HBwdWhrA'] ?? '';
 
 enum UserState { idle, waitingForWeight }
