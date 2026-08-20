@@ -1,3 +1,4 @@
+cat > /home/Dashtya7mad/app.py << 'EOF'
 import os
 import logging
 import requests
