@@ -34,12 +34,18 @@ if not BOT_TOKEN or not GEMINI_KEYS:
 logger.info(f"Loaded {len(GEMINI_KEYS)} Gemini keys")
 
 # ==================== نظام Gemini ====================
-def get_random_gemini_key():
-    return random.choice(GEMINI_KEYS)
+key_index = 0
 
-current_key = get_random_gemini_key()
+def get_next_gemini_key():
+    global key_index
+    key = GEMINI_KEYS[key_index % len(GEMINI_KEYS)]
+    key_index += 1
+    return key
+
+current_key = get_next_gemini_key()
 genai.configure(api_key=current_key)
 model = genai.GenerativeModel("gemini-3.5-flash")
+
 
 # ==================== نظام اللغة ====================
 user_langs = {}
@@ -139,7 +145,7 @@ TEXTS = {
 }
 
 # ==================== الحد اليومي ====================
-DAILY_LIMIT = 20
+DAILY_LIMIT = 200
 user_daily_counts = {}
 
 def check_daily_limit(user_id: int) -> bool:
