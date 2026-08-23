@@ -34,128 +34,127 @@ if not BOT_TOKEN or not GEMINI_KEYS:
 
 logger.info(f"Loaded {len(GEMINI_KEYS)} Gemini keys")
 
-# ==================== نظام Gemini المحسّن - FIXED ====================
-class GeminiKeyManager:
+# ==================== نظام تبديل المفاتيح - هەر پرسیار کلیلێک ====================
+class KeyRotator:
     def __init__(self, keys):
         self.keys = keys
-        self.key_index = 0
-        self.failed_keys = {}  # کلیل + کاتی شکست
-        self.cooldown_seconds = 3600  # 1 ساعة cooldown
+        self.current_index = 0
+        self.failed_keys = set()  # کلیلە شکستخواردووەکان
     
     def get_next_key(self):
-        """گرتنی کلیلی داهاتوو کە کار بکات"""
-        now = time.time()
+        """گرتنی کلیلی داهاتوو - هەر جارێک کلیلێکی جیاواز"""
+        attempts = 0
+        max_attempts = len(self.keys)
         
-        # پاککردنەوەی کلیلە کۆنە شکستخواردووەکان
-        expired = [k for k, t in list(self.failed_keys.items()) if now - t > self.cooldown_seconds]
-        for k in expired:
-            del self.failed_keys[k]
-            logger.info(f"Key reactivated after cooldown: {k[:15]}...")
+        while attempts < max_attempts:
+            key = self.keys[self.current_index % len(self.keys)]
+            self.current_index += 1
+            attempts += 1
+            
+            # ئەگەر ئەم کلیلە شکستی هێنابێت، کلیلی داهاتوو تاقی بکەوە
+            if key not in self.failed_keys:
+                return key
         
-        # دۆزینەوەی کلیلی کار
-        available = [k for k in self.keys if k not in self.failed_keys]
-        
-        if not available:
-            logger.error("NO AVAILABLE KEYS! All keys failed or on cooldown.")
-            return None
-        
-        key = available[self.key_index % len(available)]
-        self.key_index += 1
-        return key
+        # هەموو کلیلەکان شکستیان هێنا
+        return None
     
-    def mark_failed(self, key, error_msg=""):
+    def mark_failed(self, key):
         """نیشانەکردنی کلیلێک وەک شکستخواردوو"""
-        self.failed_keys[key] = time.time()
-        logger.warning(f"Key marked failed: {key[:15]}... | Error: {error_msg[:50]}")
+        self.failed_keys.add(key)
+        logger.warning(f"Key marked as failed: {key[:15]}... | Total failed: {len(self.failed_keys)}/{len(self.keys)}")
+    
+    def reset_failed(self):
+        """ریسێتکردنی کلیلە شکستخواردووەکان (بۆ سبەینێ)"""
+        self.failed_keys.clear()
+        logger.info("All keys reset - ready for new day")
     
     def get_stats(self):
-        """ئاماری کلیلەکان"""
-        total = len(self.keys)
-        failed = len(self.failed_keys)
-        available = total - failed
-        return f"کلیل: {available}/{total} کار دەکەن | {failed} لە cooldown"
+        return f"کلیل: {len(self.keys) - len(self.failed_keys)}/{len(self.keys)} کار دەکەن"
 
-key_manager = GeminiKeyManager(GEMINI_KEYS)
+key_rotator = KeyRotator(GEMINI_KEYS)
 
-def create_model_with_key(key):
-    """دروستکردنی مۆدێلی نوێ بە کلیلێکی نوێ - هەر جارێک!"""
-    if not key:
-        return None
+def call_gemini_with_key(key, prompt, image_part=None):
+    """
+    بانگکردنی Gemini بە کلیلێکی دیاریکراو
+    هەر جارێک genai.configure() بانگ دەکات
+    """
     try:
-        # هەر جارێک ڕێکخستنی نوێ
+        # هەر جارێک ڕێکخستنی نوێ لەگەڵ کلیلی نوێ
         genai.configure(api_key=key)
         model = genai.GenerativeModel("gemini-3.5-flash")
-        return model
+        
+        if image_part:
+            response = model.generate_content([prompt, image_part])
+        else:
+            response = model.generate_content(prompt)
+        
+        return response.text
+        
     except Exception as e:
-        logger.error(f"Failed to create model with key: {key[:15]}... | {e}")
-        return None
+        error_str = str(e)
+        # هەر جۆرە هەڵەیەک بگەڕێنەوە بۆ دەرەوە
+        raise Exception(f"GEMINI_ERROR:{error_str}")
 
-# ==================== دوال آمنة لإنشاء المحتوى - FIXED ====================
-async def safe_gemini_generate(prompt, image_part=None, max_retries=20):
+async def gemini_generate(prompt, image_part=None):
     """
-    فەرمانی پارێزراو بۆ بانگکردنی Gemini
-    هەر جارێک مۆدێلەکە لەسەر کلیلی نوێ دروست دەکات
+    فەرمانی سەرەکی: هەر پرسیارێک بە کلیلێک
+    ئەگەر کلیلێک شکستی هێنا، کلیلی داهاتوو تاقی دەکاتەوە
     """
+    max_attempts = len(GEMINI_KEYS)
     last_error = None
     
-    for attempt in range(max_retries):
-        key = key_manager.get_next_key()
+    for attempt in range(max_attempts):
+        key = key_rotator.get_next_key()
         
         if not key:
-            raise Exception("⛔ هیچ کلیلێک بەردەست نییە!\n\n"
-                         "هەموو کلیلەکان گەیشتوونەتە سنواری ڕۆژانە.\n"
-                         "🕐 تکایە ١ کاتژمێر چاوەڕوانی بکە یان کلیلی نوێ زیاد بکە.")
+            # هەموو کلیلەکان شکستیان هێنا
+            raise Exception(
+                f"⛔ هەموو {len(GEMINI_KEYS)} کلیلەکان شکستیان هێنا!\n\n"
+                f"🕐 تکایە ١ کاتژمێر چاوەڕوانی بکە بۆ ڕیسێتکردنی کلیلەکان."
+            )
         
         try:
-            # هەر جارێک مۆدێلێکی نوێ دروست بکە
-            model = create_model_with_key(key)
-            if not model:
-                key_manager.mark_failed(key, "Failed to create model")
-                continue
+            logger.info(f"Trying key {key[:15]}... (attempt {attempt+1}/{max_attempts})")
+            result = call_gemini_with_key(key, prompt, image_part)
             
-            # بانگکردنی API
-            if image_part:
-                response = model.generate_content([prompt, image_part])
-            else:
-                response = model.generate_content(prompt)
-            
-            text = response.text
-            if text and len(text) > 0:
-                logger.info(f"✅ Success with key {key[:15]}... (attempt {attempt+1}) | Stats: {key_manager.get_stats()}")
-                return text
+            if result and len(result) > 0:
+                logger.info(f"✅ Success with key {key[:15]}... | {key_rotator.get_stats()}")
+                return result
             else:
                 logger.warning(f"Empty response from key {key[:15]}...")
                 continue
-            
+                
         except Exception as e:
             error_str = str(e)
             last_error = error_str
             
             # ئەگەر هەڵەی 429 یان quota
-            if any(x in error_str for x in ["429", "quota", "exceeded", "limit", "Rate", "Quota"]):
-                key_manager.mark_failed(key, error_str)
-                wait_time = min(2 + attempt, 10)  # چاوەڕوانی کورت
-                logger.info(f"⏳ 429 error on key {key[:15]}..., waiting {wait_time}s... | Attempt {attempt+1}/{max_retries}")
-                time.sleep(wait_time)
+            if any(x in error_str.lower() for x in ["429", "quota", "exceeded", "limit", "rate"]):
+                key_rotator.mark_failed(key)
+                logger.info(f"⏳ Key {key[:15]}... hit quota, trying next...")
                 continue
             
-            # هەڵەی تری API
-            elif any(x in error_str for x in ["400", "401", "403", "invalid", "API key", "not valid"]):
-                key_manager.mark_failed(key, error_str)
-                logger.error(f"❌ Invalid key {key[:15]}... | {error_str[:100]}")
+            # هەڵەی کلیلی نادروست
+            elif any(x in error_str.lower() for x in ["400", "401", "403", "invalid", "not valid"]):
+                key_rotator.mark_failed(key)
+                logger.error(f"❌ Invalid key {key[:15]}...")
                 continue
             
-            # هەڵەی نenasaf (network, etc)
+            # هەڵەکانی تر (network, timeout, etc)
             else:
-                logger.warning(f"⚠️ Unexpected error: {error_str[:100]}")
+                logger.warning(f"⚠️ Error with key {key[:15]}...: {error_str[:100]}")
+                # بۆ هەڵەکانی تر، کلیلەکە ناناسێنینەوە وەک شکستخواردوو
+                # چونکە لەوانەیە کێشەی نێتwerk بێت نەک کلیلەکە خۆی
                 time.sleep(1)
                 continue
     
     # هەموو هەوڵەکان شکستیان هێنا
-    raise Exception(f"⛔ هەموو کلیلەکان شکستیان هێنا!\n\n"
-                   f"هەڵەی کۆتایی: {str(last_error)[:200]}\n\n"
-                   f"ئامار: {key_manager.get_stats()}\n\n"
-                   f"🕐 تکایە دواتر دووبارە هەوڵبدەرەوە.")
+    raise Exception(
+        f"⛔ هەموو کلیلەکان تاقیکرانەوە و شکستیان هێنا!\n\n"
+        f"هەڵەی کۆتایی: {str(last_error)[:200]}\n\n"
+        f"📊 {key_rotator.get_stats()}\n\n"
+        f"🕐 تکایە دواتر دووبارە هەوڵبدەرەوە."
+    )
 
 # ==================== نظام اللغة ====================
 user_langs = {}
@@ -454,7 +453,7 @@ Language: English
 🟢 IV Fluid Compatibility
 🟢 Important warnings"""
 
-        info = await safe_gemini_generate(prompt)
+        info = await gemini_generate(prompt)
         
         sessions[chat_id] = Session(medicine_name=text, medicine_info=info, lang=lang)
         await send_message(chat_id, get_text("menu_title", lang, name=text), get_main_menu(lang))
@@ -485,7 +484,7 @@ async def identify_medicine_by_photo(chat_id, message, lang):
             prompt = "This image is a medicine. Identify it in English:"
         
         image_part = {"mime_type": "image/jpeg", "data": img_data}
-        info = await safe_gemini_generate(prompt, image_part=image_part)
+        info = await gemini_generate(prompt, image_part=image_part)
         
         med_name = "نەناسراو"
         for line in info.split("\n")[:10]:
@@ -554,7 +553,7 @@ async def get_other_names(chat_id, session, lang):
         else:
             prompt = f'Write only scientific and brand names of "{session.medicine_name}" in English.'
 
-        response_text = await safe_gemini_generate(prompt)
+        response_text = await gemini_generate(prompt)
         await send_message(chat_id, response_text, get_main_menu(lang))
     except Exception as e:
         await send_message(chat_id, f"❌ هەڵە: {str(e)}", get_main_menu(lang))
@@ -591,7 +590,7 @@ async def handle_weight_input(chat_id, text, lang):
             prompt = f"""For "{session.medicine_name}", person weighs {weight}kg.
 Calculate dosage in English:"""
 
-        response_text = await safe_gemini_generate(prompt)
+        response_text = await gemini_generate(prompt)
         await send_message(chat_id, response_text, get_main_menu(lang))
     except Exception as e:
         await send_message(chat_id, f"❌ هەڵە: {str(e)}", get_main_menu(lang))
@@ -605,7 +604,7 @@ async def get_contraindications(chat_id, session, lang):
         else:
             prompt = f'Contraindications of "{session.medicine_name}" in English:'
 
-        response_text = await safe_gemini_generate(prompt)
+        response_text = await gemini_generate(prompt)
         await send_message(chat_id, response_text, get_main_menu(lang))
     except Exception as e:
         await send_message(chat_id, f"❌ هەڵە: {str(e)}", get_main_menu(lang))
@@ -619,7 +618,7 @@ async def get_iv_fluids(chat_id, session, lang):
         else:
             prompt = f'Can "{session.medicine_name}" be mixed with IV fluids? In English:'
 
-        response_text = await safe_gemini_generate(prompt)
+        response_text = await gemini_generate(prompt)
         await send_message(chat_id, response_text, get_main_menu(lang))
     except Exception as e:
         await send_message(chat_id, f"❌ هەڵە: {str(e)}", get_main_menu(lang))
@@ -633,7 +632,7 @@ async def get_mechanism_and_system(chat_id, session, lang):
         else:
             prompt = f'Body system and mechanism of "{session.medicine_name}" in English:'
 
-        response_text = await safe_gemini_generate(prompt)
+        response_text = await gemini_generate(prompt)
         await send_message(chat_id, response_text, get_main_menu(lang))
     except Exception as e:
         await send_message(chat_id, f"❌ هەڵە: {str(e)}", get_main_menu(lang))
