@@ -36,13 +36,13 @@ logger.info(f"Loaded {len(GEMINI_KEYS)} Gemini keys")
 # ==================== نظام Gemini ====================
 key_index = 0
 
-def get_next_gemini_key():
+def get_random_gemini_key():
     global key_index
     key = GEMINI_KEYS[key_index % len(GEMINI_KEYS)]
     key_index += 1
     return key
 
-current_key = get_next_gemini_key()
+current_key = get_random_gemini_key()
 genai.configure(api_key=current_key)
 model = genai.GenerativeModel("gemini-3.5-flash")
 
