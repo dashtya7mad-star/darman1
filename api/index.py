@@ -34,7 +34,7 @@ if not BOT_TOKEN or not GEMINI_KEYS:
 
 logger.info(f"Loaded {len(GEMINI_KEYS)} Gemini keys")
 
-# ==================== نظام Gemini المحسّن ====================
+# ==================== نظام Gemini المحسّن - FIXED ====================
 class GeminiKeyManager:
     def __init__(self, keys):
         self.keys = keys
@@ -47,7 +47,7 @@ class GeminiKeyManager:
         now = time.time()
         
         # پاککردنەوەی کلیلە کۆنە شکستخواردووەکان
-        expired = [k for k, t in self.failed_keys.items() if now - t > self.cooldown_seconds]
+        expired = [k for k, t in list(self.failed_keys.items()) if now - t > self.cooldown_seconds]
         for k in expired:
             del self.failed_keys[k]
             logger.info(f"Key reactivated after cooldown: {k[:15]}...")
@@ -77,22 +77,28 @@ class GeminiKeyManager:
 
 key_manager = GeminiKeyManager(GEMINI_KEYS)
 
-def configure_gemini_with_key(key):
-    """ڕێکخستنی Gemini بە کلیلێکی نوێ"""
+def create_model_with_key(key):
+    """دروستکردنی مۆدێلی نوێ بە کلیلێکی نوێ - هەر جارێک!"""
     if not key:
         return None
-    genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-3.5-flash")
+    try:
+        # هەر جارێک ڕێکخستنی نوێ
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        return model
+    except Exception as e:
+        logger.error(f"Failed to create model with key: {key[:15]}... | {e}")
+        return None
 
-# ==================== دوال آمنة لإنشاء المحتوى ====================
-async def safe_gemini_generate(prompt, image_part=None, max_retries_per_key=2):
+# ==================== دوال آمنة لإنشاء المحتوى - FIXED ====================
+async def safe_gemini_generate(prompt, image_part=None, max_retries=20):
     """
     فەرمانی پارێزراو بۆ بانگکردنی Gemini
-    ئەگەر کلیلێک شکستی هێنا، کلیلێکی دیکە تاقی دەکاتەوە
+    هەر جارێک مۆدێلەکە لەسەر کلیلی نوێ دروست دەکات
     """
     last_error = None
     
-    for attempt in range(len(GEMINI_KEYS) * max_retries_per_key):
+    for attempt in range(max_retries):
         key = key_manager.get_next_key()
         
         if not key:
@@ -101,8 +107,10 @@ async def safe_gemini_generate(prompt, image_part=None, max_retries_per_key=2):
                          "🕐 تکایە ١ کاتژمێر چاوەڕوانی بکە یان کلیلی نوێ زیاد بکە.")
         
         try:
-            model = configure_gemini_with_key(key)
+            # هەر جارێک مۆدێلێکی نوێ دروست بکە
+            model = create_model_with_key(key)
             if not model:
+                key_manager.mark_failed(key, "Failed to create model")
                 continue
             
             # بانگکردنی API
@@ -113,30 +121,33 @@ async def safe_gemini_generate(prompt, image_part=None, max_retries_per_key=2):
             
             text = response.text
             if text and len(text) > 0:
-                logger.info(f"Success with key: {key[:15]}... | Stats: {key_manager.get_stats()}")
+                logger.info(f"✅ Success with key {key[:15]}... (attempt {attempt+1}) | Stats: {key_manager.get_stats()}")
                 return text
+            else:
+                logger.warning(f"Empty response from key {key[:15]}...")
+                continue
             
         except Exception as e:
             error_str = str(e)
             last_error = error_str
             
             # ئەگەر هەڵەی 429 یان quota
-            if any(x in error_str for x in ["429", "quota", "exceeded", "limit", "Rate"]):
+            if any(x in error_str for x in ["429", "quota", "exceeded", "limit", "Rate", "Quota"]):
                 key_manager.mark_failed(key, error_str)
-                wait_time = min(2 ** (attempt % 5), 30)  # exponential backoff, max 30s
-                logger.info(f"429 error, trying next key in {wait_time}s... | Attempt {attempt+1}")
+                wait_time = min(2 + attempt, 10)  # چاوەڕوانی کورت
+                logger.info(f"⏳ 429 error on key {key[:15]}..., waiting {wait_time}s... | Attempt {attempt+1}/{max_retries}")
                 time.sleep(wait_time)
                 continue
             
             # هەڵەی تری API
-            elif any(x in error_str for x in ["400", "401", "403", "invalid", "API key"]):
+            elif any(x in error_str for x in ["400", "401", "403", "invalid", "API key", "not valid"]):
                 key_manager.mark_failed(key, error_str)
-                logger.error(f"Invalid key or API error: {key[:15]}... | {error_str[:100]}")
+                logger.error(f"❌ Invalid key {key[:15]}... | {error_str[:100]}")
                 continue
             
             # هەڵەی نenasaf (network, etc)
             else:
-                logger.warning(f"Unexpected error: {error_str[:100]}")
+                logger.warning(f"⚠️ Unexpected error: {error_str[:100]}")
                 time.sleep(1)
                 continue
     
