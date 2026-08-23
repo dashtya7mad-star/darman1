@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 
 GEMINI_KEYS = []
-for i in range(1, 11):
+for i in range(1, 201):
     key = os.environ.get(f"GEMINI_API_KEY_{i}", "").strip()
     if key:
         GEMINI_KEYS.append(key)
