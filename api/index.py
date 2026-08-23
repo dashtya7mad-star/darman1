@@ -39,7 +39,7 @@ def get_random_gemini_key():
 
 current_key = get_random_gemini_key()
 genai.configure(api_key=current_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-3.5-flash")
 
 # ==================== نظام اللغة ====================
 user_langs = {}
