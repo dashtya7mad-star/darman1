@@ -39,7 +39,7 @@ key_index = 0
 def get_next_gemini_key():
     global key_index
     key = GEMINI_KEYS[key_index % len(GEMINI_KEYS)]
-    key_index += 1
+    key_index += 10
     return key
 
 current_key = get_next_gemini_key()
