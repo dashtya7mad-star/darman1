@@ -36,13 +36,13 @@ logger.info(f"Loaded {len(GEMINI_KEYS)} Gemini keys")
 # ==================== نظام Gemini ====================
 key_index = 0
 
-def get_random_gemini_key():
+def get_next_gemini_key():
     global key_index
     key = GEMINI_KEYS[key_index % len(GEMINI_KEYS)]
     key_index += 1
     return key
 
-current_key = get_random_gemini_key()
+current_key = get_next_gemini_key()
 genai.configure(api_key=current_key)
 model = genai.GenerativeModel("gemini-3.5-flash")
 
@@ -344,7 +344,7 @@ Language: English
 🟢 IV Fluid Compatibility
 🟢 Important warnings"""
 
-        current_key = get_random_gemini_key()
+        current_key = get_next_gemini_key()
         genai.configure(api_key=current_key)
         response = model.generate_content(prompt)
         info = response.text or "⚠️"
@@ -378,7 +378,7 @@ async def identify_medicine_by_photo(chat_id, message, lang):
             prompt = "This image is a medicine. Identify it in English:"
         
         image_part = {"mime_type": "image/jpeg", "data": img_data}
-        current_key = get_random_gemini_key()
+        current_key = get_next_gemini_key()
         genai.configure(api_key=current_key)
         response = model.generate_content([prompt, image_part])
         info = response.text or "⚠️"
@@ -450,7 +450,7 @@ async def get_other_names(chat_id, session, lang):
         else:
             prompt = f'Write only scientific and brand names of "{session.medicine_name}" in English.'
 
-        current_key = get_random_gemini_key()
+        current_key = get_next_gemini_key()
         genai.configure(api_key=current_key)
         response = model.generate_content(prompt)
         await send_message(chat_id, response.text or "⚠️", get_main_menu(lang))
@@ -489,7 +489,7 @@ async def handle_weight_input(chat_id, text, lang):
             prompt = f"""For "{session.medicine_name}", person weighs {weight}kg.
 Calculate dosage in English:"""
 
-        current_key = get_random_gemini_key()
+        current_key = get_next_gemini_key()
         genai.configure(api_key=current_key)
         response = model.generate_content(prompt)
         await send_message(chat_id, response.text or "⚠️", get_main_menu(lang))
@@ -505,7 +505,7 @@ async def get_contraindications(chat_id, session, lang):
         else:
             prompt = f'Contraindications of "{session.medicine_name}" in English:'
 
-        current_key = get_random_gemini_key()
+        current_key = get_next_gemini_key()
         genai.configure(api_key=current_key)
         response = model.generate_content(prompt)
         await send_message(chat_id, response.text or "⚠️", get_main_menu(lang))
@@ -521,7 +521,7 @@ async def get_iv_fluids(chat_id, session, lang):
         else:
             prompt = f'Can "{session.medicine_name}" be mixed with IV fluids? In English:'
 
-        current_key = get_random_gemini_key()
+        current_key = get_next_gemini_key()
         genai.configure(api_key=current_key)
         response = model.generate_content(prompt)
         await send_message(chat_id, response.text or "⚠️", get_main_menu(lang))
@@ -537,7 +537,7 @@ async def get_mechanism_and_system(chat_id, session, lang):
         else:
             prompt = f'Body system and mechanism of "{session.medicine_name}" in English:'
 
-        current_key = get_random_gemini_key()
+        current_key = get_next_gemini_key()
         genai.configure(api_key=current_key)
         response = model.generate_content(prompt)
         await send_message(chat_id, response.text or "⚠️", get_main_menu(lang))
